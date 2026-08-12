@@ -19,7 +19,15 @@ static int vortekServerConnect() {
     memset(&server_addr, 0, sizeof(server_addr));
     server_addr.sun_family = AF_LOCAL;
 
-    strncpy(server_addr.sun_path, VORTEK_SERVER_PATH, sizeof(server_addr.sun_path) - 1);
+    const char* configuredPath = getenv("VORTEK_SERVER_PATH");
+    const char* serverPath = configuredPath && configuredPath[0]
+            ? configuredPath : VORTEK_SERVER_PATH;
+    if (strlen(serverPath) >= sizeof(server_addr.sun_path)) {
+        close(fd);
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    strcpy(server_addr.sun_path, serverPath);
 
     int res;
     do {
