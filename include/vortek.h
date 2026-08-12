@@ -121,6 +121,7 @@ typedef struct JMethods {
 
 typedef struct MappedMemory {
     void* data;
+    int fd;
     int allocationSize;
     int size;
 } MappedMemory;

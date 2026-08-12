@@ -1,4 +1,6 @@
 #include <sys/mman.h>
+#include <sys/ioctl.h>
+#include <linux/dma-buf.h>
 #include <pthread.h>
 
 #include "vortek.h"
@@ -329,6 +331,7 @@ VkResult vt_call_vkAllocateMemory(VkDevice device, const VkMemoryAllocateInfo* p
         *pMemory = VkObject_toHandle(memoryObject);
         
         MappedMemory* mappedMemory = calloc(1, sizeof(MappedMemory));
+        mappedMemory->fd = -1;
         mappedMemory->allocationSize = pAllocateInfo->allocationSize;
         memoryObject->tag = mappedMemory;
     }
@@ -370,14 +373,21 @@ VkResult vt_call_vkMapMemory(VkDevice device, VkDeviceMemory memory, VkDeviceSiz
     if (numFds == 1) {
         if (size == VK_WHOLE_SIZE) size = mappedMemory->allocationSize;
         mappedMemory->size = size;
-        
+
+        struct dma_buf_sync sync = {
+            .flags = DMA_BUF_SYNC_START | DMA_BUF_SYNC_RW,
+        };
+        ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync);
         void* data = mmap(NULL, size, PROT_WRITE | PROT_READ, MAP_SHARED, fd, offset);
         if (data != MAP_FAILED) {
-            CLOSEFD(fd);
+            mappedMemory->fd = fd;
             mappedMemory->data = data;
             *ppData = data;
         }
-        else result = VK_ERROR_MEMORY_MAP_FAILED;
+        else {
+            CLOSEFD(fd);
+            result = VK_ERROR_MEMORY_MAP_FAILED;
+        }
     }
     else result = VK_ERROR_MEMORY_MAP_FAILED;
     
@@ -392,8 +402,16 @@ void vt_call_vkUnmapMemory(VkDevice device, VkDeviceMemory memory) {
     if (memoryObject->tag) {
         MappedMemory* mappedMemory = memoryObject->tag;
         if (mappedMemory->data) {
+            msync(mappedMemory->data, mappedMemory->size, MS_SYNC);
             munmap(mappedMemory->data, mappedMemory->size);
             mappedMemory->data = NULL;
+            if (mappedMemory->fd >= 0) {
+                struct dma_buf_sync sync = {
+                    .flags = DMA_BUF_SYNC_END | DMA_BUF_SYNC_RW,
+                };
+                ioctl(mappedMemory->fd, DMA_BUF_IOCTL_SYNC, &sync);
+                CLOSEFD(mappedMemory->fd);
+            }
         }
     }
 
