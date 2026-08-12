@@ -1882,8 +1882,9 @@ VkResult vt_call_vkAcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain
 
 VkResult vt_call_vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
     VT_CALL_LOCK();
-    
-    VT_SERIALIZE_CMD(VkPresentInfoKHR, pPresentInfo);
+
+    VkObject* queueObject = VkObject_fromHandle(queue);
+    VT_SERIALIZE_CMD(vkQueuePresentKHR, (VkQueue)&queueObject->id, pPresentInfo);
     VT_SEND_CHECKED(REQUEST_CODE_VK_QUEUE_PRESENT_KHR, VT_RETURN);
     
     if (pPresentInfo->pResults) {
