@@ -1906,6 +1906,18 @@ VkBool32 vt_call_vkGetPhysicalDeviceXlibPresentationSupportKHR(VkPhysicalDevice 
     return VK_TRUE;
 }
 
+#ifdef VK_USE_PLATFORM_XCB_KHR
+VkResult vt_call_vkCreateXcbSurfaceKHR(VkInstance instance, const VkXcbSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface) {
+    VkObject* surfaceObject = VkObject_create(VK_OBJECT_TYPE_SURFACE_KHR, (uint64_t)pCreateInfo->window);
+    *pSurface = VkObject_toHandle(surfaceObject);
+    return VK_SUCCESS;
+}
+
+VkBool32 vt_call_vkGetPhysicalDeviceXcbPresentationSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, xcb_connection_t* connection, xcb_visualid_t visualId) {
+    return VK_TRUE;
+}
+#endif
+
 void vt_call_vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures2* pFeatures) {
     VT_CALL_LOCK();
     VkObject* physicalDeviceObject = VkObject_fromHandle(physicalDevice);
@@ -3303,6 +3315,10 @@ static const struct VulkanFunc vkDispatchTable[] = {
     {"vkQueuePresentKHR", vt_call_vkQueuePresentKHR},
     {"vkCreateXlibSurfaceKHR", vt_call_vkCreateXlibSurfaceKHR},
     {"vkGetPhysicalDeviceXlibPresentationSupportKHR", vt_call_vkGetPhysicalDeviceXlibPresentationSupportKHR},
+#ifdef VK_USE_PLATFORM_XCB_KHR
+    {"vkCreateXcbSurfaceKHR", vt_call_vkCreateXcbSurfaceKHR},
+    {"vkGetPhysicalDeviceXcbPresentationSupportKHR", vt_call_vkGetPhysicalDeviceXcbPresentationSupportKHR},
+#endif
     {"vkGetPhysicalDeviceFeatures2", vt_call_vkGetPhysicalDeviceFeatures2},
     {"vkGetPhysicalDeviceFeatures2KHR", vt_call_vkGetPhysicalDeviceFeatures2},
     {"vkGetPhysicalDeviceProperties2", vt_call_vkGetPhysicalDeviceProperties2},
