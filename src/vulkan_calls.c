@@ -584,9 +584,10 @@ VkResult vt_call_vkResetFences(VkDevice device, uint32_t fenceCount, const VkFen
     
     VT_SERIALIZE_CMD(vkResetFences, (VkDevice)&deviceObject->id, fenceCount, pFences);
     VT_SEND_CHECKED(REQUEST_CODE_VK_RESET_FENCES, VT_RETURN);
-    
+    VT_RECV_CHECKED(VT_RETURN);
+
     VT_CALL_UNLOCK();
-    return VK_SUCCESS;
+    return (VkResult)result;
 }
 
 VkResult vt_call_vkGetFenceStatus(VkDevice device, VkFence fence) {
