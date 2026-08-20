@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <linux/dma-buf.h>
@@ -109,6 +110,15 @@ void vt_call_vkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice, VkPh
     VT_RECV_CHECKED();
     
     vt_unserialize_VkPhysicalDeviceProperties(pProperties, inputBuffer, &globalMemoryPool);
+    fprintf(stderr,
+            "vortek-guest props name=%s samples=%d ubo=%u uboRange=%u vout=%u color=%u\n",
+            pProperties->deviceName,
+            pProperties->limits.standardSampleLocations,
+            pProperties->limits.maxPerStageDescriptorUniformBuffers,
+            pProperties->limits.maxUniformBufferRange,
+            pProperties->limits.maxVertexOutputComponents,
+            pProperties->limits.maxColorAttachments);
+    fflush(stderr);
     VT_CALL_UNLOCK();
 }
 
@@ -1916,13 +1926,28 @@ VkResult vt_call_vkGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapcha
 }
 
 VkResult vt_call_vkAcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex) {
-    (void)device;
-    (void)timeout;
-    (void)semaphore;
-    (void)fence;
     VT_CALL_LOCK();
+    VkObject* deviceObject = VkObject_fromHandle(device);
+    VkObject* swapchainObject = VkObject_fromHandle(swapchain);
+    VkObject* semaphoreObject = VkObject_fromHandle(semaphore);
+    VkObject* fenceObject = VkObject_fromHandle(fence);
+    VkSemaphore semaphoreId = VKOBJECT_IS_NULL(semaphoreObject) ? VK_NULL_HANDLE
+            : (VkSemaphore)&semaphoreObject->id;
+    VkFence fenceId = VKOBJECT_IS_NULL(fenceObject) ? VK_NULL_HANDLE
+            : (VkFence)&fenceObject->id;
+
+    VT_SERIALIZE_CMD(vkAcquireNextImageKHR, (VkDevice)&deviceObject->id,
+                     (VkSwapchainKHR)&swapchainObject->id, timeout,
+                     semaphoreId, fenceId, NULL);
+    VT_SEND_CHECKED(REQUEST_CODE_VK_ACQUIRE_NEXT_IMAGE_KHR, VT_RETURN);
+    VT_RECV_CHECKED(VT_RETURN);
+
+    if ((VkResult)result < 0) {
+        VT_CALL_UNLOCK();
+        return (VkResult)result;
+    }
     if (pImageIndex)
-        *pImageIndex = vortek_acquire_local(VkObject_fromHandle(swapchain));
+        *pImageIndex = (uint32_t)result;
     VT_CALL_UNLOCK();
     return VK_SUCCESS;
 }
@@ -1997,6 +2022,21 @@ void vt_call_vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice, VkPhy
     VT_RECV_CHECKED();
     
     vt_unserialize_VkPhysicalDeviceFeatures2(pFeatures, inputBuffer, &globalMemoryPool);
+    {
+        VkPhysicalDeviceTransformFeedbackFeaturesEXT *tf = findNextVkStructure(
+                pFeatures->pNext,
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT);
+        fprintf(stderr,
+                "vortek-guest feats2 blend=%d atomics=%d inherited=%d tess=%d geom=%d tfNext=%d tf=%d\n",
+                pFeatures->features.independentBlend,
+                pFeatures->features.vertexPipelineStoresAndAtomics,
+                pFeatures->features.inheritedQueries,
+                pFeatures->features.tessellationShader,
+                pFeatures->features.geometryShader,
+                tf != NULL,
+                tf ? tf->transformFeedback : -1);
+        fflush(stderr);
+    }
     VT_CALL_UNLOCK();
 }
 
@@ -2009,6 +2049,14 @@ void vt_call_vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice, VkP
     VT_RECV_CHECKED();
     
     vt_unserialize_VkPhysicalDeviceProperties2(pProperties, inputBuffer, &globalMemoryPool);
+    fprintf(stderr,
+            "vortek-guest props2 name=%s samples=%d ubo=%u vout=%u color=%u\n",
+            pProperties->properties.deviceName,
+            pProperties->properties.limits.standardSampleLocations,
+            pProperties->properties.limits.maxPerStageDescriptorUniformBuffers,
+            pProperties->properties.limits.maxVertexOutputComponents,
+            pProperties->properties.limits.maxColorAttachments);
+    fflush(stderr);
     VT_CALL_UNLOCK();
 }
 
@@ -2258,13 +2306,12 @@ VkResult vt_call_vkGetDeviceGroupSurfacePresentModesKHR(VkDevice device, VkSurfa
 }
 
 VkResult vt_call_vkAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR* pAcquireInfo, uint32_t* pImageIndex) {
-    (void)device;
-    VT_CALL_LOCK();
-    if (pImageIndex)
-        *pImageIndex = vortek_acquire_local(VkObject_fromHandle(
-                pAcquireInfo ? pAcquireInfo->swapchain : VK_NULL_HANDLE));
-    VT_CALL_UNLOCK();
-    return VK_SUCCESS;
+    if (!pAcquireInfo)
+        return VK_ERROR_INITIALIZATION_FAILED;
+    return vt_call_vkAcquireNextImageKHR(device, pAcquireInfo->swapchain,
+                                         pAcquireInfo->timeout,
+                                         pAcquireInfo->semaphore,
+                                         pAcquireInfo->fence, pImageIndex);
 }
 
 void vt_call_vkCmdDispatchBase(VkCommandBuffer commandBuffer, uint32_t baseGroupX, uint32_t baseGroupY, uint32_t baseGroupZ, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ) {
