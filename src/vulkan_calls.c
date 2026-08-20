@@ -1830,6 +1830,34 @@ VkResult vt_call_vkGetPhysicalDeviceSurfacePresentModesKHR(VkPhysicalDevice phys
     return (VkResult)result;
 }
 
+typedef struct {
+    uint32_t image_count;
+    uint32_t acquire;
+} VortekSwapchainState;
+
+static VortekSwapchainState *vortek_sw_state(VkObject *obj)
+{
+    if (VKOBJECT_IS_NULL(obj))
+        return NULL;
+    if (!obj->tag)
+        obj->tag = calloc(1, sizeof(VortekSwapchainState));
+    return obj->tag;
+}
+
+static uint32_t vortek_acquire_local(VkObject *swapchainObject)
+{
+    VortekSwapchainState *st = vortek_sw_state(swapchainObject);
+    uint32_t n;
+    uint32_t idx;
+
+    if (!st)
+        return 0;
+    n = st->image_count ? st->image_count : 1;
+    idx = st->acquire % n;
+    st->acquire++;
+    return idx;
+}
+
 VkResult vt_call_vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSwapchainKHR* pSwapchain) {
     VT_CALL_LOCK();
     VkObject* deviceObject = VkObject_fromHandle(device);
@@ -1846,6 +1874,8 @@ VkResult vt_call_vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateIn
     uint64_t swapchainId;
     vt_unserialize_VkSwapchainKHR((VkSwapchainKHR)&swapchainId, inputBuffer, &globalMemoryPool);
     VkObject* swapchainObject = VkObject_create(VK_OBJECT_TYPE_SWAPCHAIN_KHR, swapchainId);
+    swapchainObject->tag = calloc(1, sizeof(VortekSwapchainState));
+    ((VortekSwapchainState *)swapchainObject->tag)->image_count = 1;
     *pSwapchain = VkObject_toHandle(swapchainObject);
     
     VT_CALL_UNLOCK();
@@ -1860,6 +1890,7 @@ void vt_call_vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, co
     VT_SERIALIZE_CMD(vkDestroySwapchainKHR, (VkDevice)&deviceObject->id, (VkSwapchainKHR)&swapchainObject->id, NULL);
     vt_send(serverRing, REQUEST_CODE_VK_DESTROY_SWAPCHAIN_KHR, outputBuffer, bufferSize);
 
+    MEMFREE(swapchainObject->tag);
     VkObject_free(swapchainObject);
     VT_CALL_UNLOCK();
 }
@@ -1874,29 +1905,26 @@ VkResult vt_call_vkGetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapcha
     VT_SEND_CHECKED(REQUEST_CODE_VK_GET_SWAPCHAIN_IMAGES_KHR, VT_RETURN);
     VT_RECV_CHECKED(VT_RETURN);
 
-    vt_unserialize_vkGetSwapchainImagesKHR(VK_NULL_HANDLE, VK_NULL_HANDLE, pSwapchainImageCount, pSwapchainImages, inputBuffer, &globalMemoryPool);    
+    vt_unserialize_vkGetSwapchainImagesKHR(VK_NULL_HANDLE, VK_NULL_HANDLE, pSwapchainImageCount, pSwapchainImages, inputBuffer, &globalMemoryPool);
+    if (result == VK_SUCCESS && pSwapchainImageCount && *pSwapchainImageCount) {
+        VortekSwapchainState *st = vortek_sw_state(swapchainObject);
+        if (st)
+            st->image_count = *pSwapchainImageCount;
+    }
     VT_CALL_UNLOCK();
     return (VkResult)result;
 }
 
 VkResult vt_call_vkAcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore, VkFence fence, uint32_t* pImageIndex) {
+    (void)device;
+    (void)timeout;
+    (void)semaphore;
+    (void)fence;
     VT_CALL_LOCK();
-    VkObject* deviceObject = VkObject_fromHandle(device);
-    VkObject* swapchainObject = VkObject_fromHandle(swapchain);
-    VkObject* semaphoreObject = VkObject_fromHandle(semaphore);
-    VkObject* fenceObject = VkObject_fromHandle(fence);
- 
-    VT_SERIALIZE_CMD(vkAcquireNextImageKHR, (VkDevice)&deviceObject->id, (VkSwapchainKHR)&swapchainObject->id, timeout, (VkSemaphore)&semaphoreObject->id, (VkFence)&fenceObject->id, NULL);
-    VT_SEND_CHECKED(REQUEST_CODE_VK_ACQUIRE_NEXT_IMAGE_KHR, VT_RETURN);
-    VT_RECV_CHECKED(VT_RETURN);
-
-    if (result >= 0 && result <= 10) {
-        *pImageIndex = result;
-        result = VK_SUCCESS;
-    }
-
+    if (pImageIndex)
+        *pImageIndex = vortek_acquire_local(VkObject_fromHandle(swapchain));
     VT_CALL_UNLOCK();
-    return (VkResult)result;
+    return VK_SUCCESS;
 }
 
 VkResult vt_call_vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPresentInfo) {
@@ -1905,15 +1933,16 @@ VkResult vt_call_vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* pPrese
     VkObject* queueObject = VkObject_fromHandle(queue);
     VT_SERIALIZE_CMD(vkQueuePresentKHR, (VkQueue)&queueObject->id, pPresentInfo);
     VT_SEND_CHECKED(REQUEST_CODE_VK_QUEUE_PRESENT_KHR, VT_RETURN);
-    
+    VT_RECV_CHECKED(VT_RETURN);
+
     if (pPresentInfo->pResults) {
         for (int i = 0; i < pPresentInfo->swapchainCount; i++) {
-            pPresentInfo->pResults[i] = VK_SUCCESS;
+            pPresentInfo->pResults[i] = (VkResult)result;
         }
     }
-    
+
     VT_CALL_UNLOCK();
-    return VK_SUCCESS;
+    return (VkResult)result;
 }
 
 VkResult vt_call_vkCreateXlibSurfaceKHR(VkInstance instance, const VkXlibSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface) {
@@ -1937,6 +1966,27 @@ VkBool32 vt_call_vkGetPhysicalDeviceXcbPresentationSupportKHR(VkPhysicalDevice p
     return VK_TRUE;
 }
 #endif
+
+struct wl_display;
+struct wl_surface;
+typedef struct VkWaylandSurfaceCreateInfoKHR {
+    VkStructureType sType;
+    const void* pNext;
+    VkFlags flags;
+    struct wl_display* display;
+    struct wl_surface* surface;
+} VkWaylandSurfaceCreateInfoKHR;
+
+VkResult vt_call_vkCreateWaylandSurfaceKHR(VkInstance instance, const VkWaylandSurfaceCreateInfoKHR* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface) {
+    VkObject* surfaceObject = VkObject_create(VK_OBJECT_TYPE_SURFACE_KHR,
+            (uint64_t)(uintptr_t)(pCreateInfo ? pCreateInfo->surface : NULL));
+    *pSurface = VkObject_toHandle(surfaceObject);
+    return VK_SUCCESS;
+}
+
+VkBool32 vt_call_vkGetPhysicalDeviceWaylandPresentationSupportKHR(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, struct wl_display* display) {
+    return VK_TRUE;
+}
 
 void vt_call_vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice, VkPhysicalDeviceFeatures2* pFeatures) {
     VT_CALL_LOCK();
@@ -2208,19 +2258,13 @@ VkResult vt_call_vkGetDeviceGroupSurfacePresentModesKHR(VkDevice device, VkSurfa
 }
 
 VkResult vt_call_vkAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR* pAcquireInfo, uint32_t* pImageIndex) {
+    (void)device;
     VT_CALL_LOCK();
- 
-    VT_SERIALIZE_CMD(VkAcquireNextImageInfoKHR, pAcquireInfo);
-    VT_SEND_CHECKED(REQUEST_CODE_VK_ACQUIRE_NEXT_IMAGE2_KHR, VT_RETURN);
-    VT_RECV_CHECKED(VT_RETURN);
-
-    if (result >= 0 && result <= 10) {
-        *pImageIndex = result;
-        result = VK_SUCCESS;
-    }
-
+    if (pImageIndex)
+        *pImageIndex = vortek_acquire_local(VkObject_fromHandle(
+                pAcquireInfo ? pAcquireInfo->swapchain : VK_NULL_HANDLE));
     VT_CALL_UNLOCK();
-    return (VkResult)result;
+    return VK_SUCCESS;
 }
 
 void vt_call_vkCmdDispatchBase(VkCommandBuffer commandBuffer, uint32_t baseGroupX, uint32_t baseGroupY, uint32_t baseGroupZ, uint32_t groupCountX, uint32_t groupCountY, uint32_t groupCountZ) {
@@ -3339,6 +3383,8 @@ static const struct VulkanFunc vkDispatchTable[] = {
     {"vkCreateXcbSurfaceKHR", vt_call_vkCreateXcbSurfaceKHR},
     {"vkGetPhysicalDeviceXcbPresentationSupportKHR", vt_call_vkGetPhysicalDeviceXcbPresentationSupportKHR},
 #endif
+    {"vkCreateWaylandSurfaceKHR", vt_call_vkCreateWaylandSurfaceKHR},
+    {"vkGetPhysicalDeviceWaylandPresentationSupportKHR", vt_call_vkGetPhysicalDeviceWaylandPresentationSupportKHR},
     {"vkGetPhysicalDeviceFeatures2", vt_call_vkGetPhysicalDeviceFeatures2},
     {"vkGetPhysicalDeviceFeatures2KHR", vt_call_vkGetPhysicalDeviceFeatures2},
     {"vkGetPhysicalDeviceProperties2", vt_call_vkGetPhysicalDeviceProperties2},
