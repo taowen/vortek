@@ -110,15 +110,21 @@ void vt_call_vkGetPhysicalDeviceProperties(VkPhysicalDevice physicalDevice, VkPh
     VT_RECV_CHECKED();
     
     vt_unserialize_VkPhysicalDeviceProperties(pProperties, inputBuffer, &globalMemoryPool);
-    fprintf(stderr,
-            "vortek-guest props name=%s samples=%d ubo=%u uboRange=%u vout=%u color=%u\n",
-            pProperties->deviceName,
-            pProperties->limits.standardSampleLocations,
-            pProperties->limits.maxPerStageDescriptorUniformBuffers,
-            pProperties->limits.maxUniformBufferRange,
-            pProperties->limits.maxVertexOutputComponents,
-            pProperties->limits.maxColorAttachments);
-    fflush(stderr);
+    {
+        static int logged;
+        if (!logged) {
+            fprintf(stderr,
+                    "vortek-guest props name=%s samples=%d ubo=%u uboRange=%u vout=%u color=%u\n",
+                    pProperties->deviceName,
+                    pProperties->limits.standardSampleLocations,
+                    pProperties->limits.maxPerStageDescriptorUniformBuffers,
+                    pProperties->limits.maxUniformBufferRange,
+                    pProperties->limits.maxVertexOutputComponents,
+                    pProperties->limits.maxColorAttachments);
+            fflush(stderr);
+            logged = 1;
+        }
+    }
     VT_CALL_UNLOCK();
 }
 
@@ -2023,19 +2029,23 @@ void vt_call_vkGetPhysicalDeviceFeatures2(VkPhysicalDevice physicalDevice, VkPhy
     
     vt_unserialize_VkPhysicalDeviceFeatures2(pFeatures, inputBuffer, &globalMemoryPool);
     {
+        static int logged;
         VkPhysicalDeviceTransformFeedbackFeaturesEXT *tf = findNextVkStructure(
                 pFeatures->pNext,
                 VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT);
-        fprintf(stderr,
-                "vortek-guest feats2 blend=%d atomics=%d inherited=%d tess=%d geom=%d tfNext=%d tf=%d\n",
-                pFeatures->features.independentBlend,
-                pFeatures->features.vertexPipelineStoresAndAtomics,
-                pFeatures->features.inheritedQueries,
-                pFeatures->features.tessellationShader,
-                pFeatures->features.geometryShader,
-                tf != NULL,
-                tf ? tf->transformFeedback : -1);
-        fflush(stderr);
+        if (!logged) {
+            fprintf(stderr,
+                    "vortek-guest feats2 blend=%d atomics=%d inherited=%d tess=%d geom=%d tfNext=%d tf=%d\n",
+                    pFeatures->features.independentBlend,
+                    pFeatures->features.vertexPipelineStoresAndAtomics,
+                    pFeatures->features.inheritedQueries,
+                    pFeatures->features.tessellationShader,
+                    pFeatures->features.geometryShader,
+                    tf != NULL,
+                    tf ? tf->transformFeedback : -1);
+            fflush(stderr);
+            logged = 1;
+        }
     }
     VT_CALL_UNLOCK();
 }
@@ -2049,14 +2059,20 @@ void vt_call_vkGetPhysicalDeviceProperties2(VkPhysicalDevice physicalDevice, VkP
     VT_RECV_CHECKED();
     
     vt_unserialize_VkPhysicalDeviceProperties2(pProperties, inputBuffer, &globalMemoryPool);
-    fprintf(stderr,
-            "vortek-guest props2 name=%s samples=%d ubo=%u vout=%u color=%u\n",
-            pProperties->properties.deviceName,
-            pProperties->properties.limits.standardSampleLocations,
-            pProperties->properties.limits.maxPerStageDescriptorUniformBuffers,
-            pProperties->properties.limits.maxVertexOutputComponents,
-            pProperties->properties.limits.maxColorAttachments);
-    fflush(stderr);
+    {
+        static int logged;
+        if (!logged) {
+            fprintf(stderr,
+                    "vortek-guest props2 name=%s samples=%d ubo=%u vout=%u color=%u\n",
+                    pProperties->properties.deviceName,
+                    pProperties->properties.limits.standardSampleLocations,
+                    pProperties->properties.limits.maxPerStageDescriptorUniformBuffers,
+                    pProperties->properties.limits.maxVertexOutputComponents,
+                    pProperties->properties.limits.maxColorAttachments);
+            fflush(stderr);
+            logged = 1;
+        }
+    }
     VT_CALL_UNLOCK();
 }
 
